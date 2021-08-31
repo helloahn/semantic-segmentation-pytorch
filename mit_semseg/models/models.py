@@ -19,12 +19,13 @@ class SegmentationModuleBase(nn.Module):
 
 
 class SegmentationModule(SegmentationModuleBase):
-    def __init__(self, net_enc, net_dec, crit, deep_sup_scale=None):
+    def __init__(self, net_enc, net_dec, crit, deep_sup_scale=None, onnx=False):
         super(SegmentationModule, self).__init__()
         self.encoder = net_enc
         self.decoder = net_dec
         self.crit = crit
         self.deep_sup_scale = deep_sup_scale
+        self.onnx = onnx
 
     def forward(self, feed_dict, *, segSize=None):
         # training
@@ -43,7 +44,19 @@ class SegmentationModule(SegmentationModuleBase):
             return loss, acc
         # inference
         else:
-            pred = self.decoder(self.encoder(feed_dict['img_data'], return_feature_maps=True), segSize=segSize)
+            enc_out = self.encoder(feed_dict['img_data'], return_feature_maps=True)
+            pred = self.decoder(enc_out, segSize=segSize)
+            if self.onnx:
+                print("onnx converting is started")
+                torch.onnx.export(
+                    self.encoder,
+                    feed_dict['img_data'],
+                    "encoder.onnx")
+
+                torch.onnx.export(
+                    self.decoder,
+                    enc_out,
+                    "decoder.onnx")
             return pred
 
 
@@ -336,7 +349,8 @@ class C1DeepSup(nn.Module):
         self.conv_last = nn.Conv2d(fc_dim // 4, num_class, 1, 1, 0)
         self.conv_last_deepsup = nn.Conv2d(fc_dim // 4, num_class, 1, 1, 0)
 
-    def forward(self, conv_out, segSize=None):
+    def forward(self, conv_out, segSize=(512,768)):
+    # def forward(self, conv_out, segSize=None):
         conv5 = conv_out[-1]
 
         x = self.cbr(conv5)
